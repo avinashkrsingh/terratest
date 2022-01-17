@@ -1,0 +1,133 @@
+{
+  "Description": "This policy defines access for SSM document runs",
+  "PolicyDocument": {
+    "Statement": [
+      {
+        "Action": [
+          "logs:FilterLogEvents",
+          "logs:DescribeSubscriptionFilters",
+          "logs:StartQuery",
+          "s3:GetObjectAcl",
+          "s3:AbortMultipartUpload",
+          "logs:CreateExportTask",
+          "logs:DescribeMetricFilters",
+          "logs:ListTagsLogGroup",
+          "logs:GetLogEvents",
+          "ssm:StartSession",
+          "s3:DeleteObject",
+          "s3:GetObject",
+          "kms:GenerateDataKey",
+          "s3:GetObjectLegalHold",
+          "s3:GetObjectRetention",
+          "ssm:TerminateSession",
+          "logs:GetLogGroupFields",
+          "s3:PutObject",
+          "s3:GetObjectTorrent",
+          "ssm:ResumeSession",
+          "s3:GetObjectVersionAcl",
+          "s3:GetObjectVersion",
+          "s3:GetObjectTagging"
+        ],
+        "Effect": "Allow",
+        "Resource": [
+          "arn:aws:logs:*:*:log-group:/ecs/confluent-connect*:log-stream:*",
+          "arn:aws:logs:*:*:log-group:/ecs/confluent-connect*",
+          "arn:aws:logs:*:*:log-group:/ecs/confluent-connect*:*",
+          "arn:aws:logs:*:*:log-group:/aws/ecs/containerinsights*",
+          "arn:aws:kms:us-east-2:112666688463:key/7a89aca0-5490-4857-a1a1-03a9ee80daeb",
+          "arn:aws:ssm:*:*:session/*@hellofurther.com",
+          "arn:aws:ssm:*:*:document/*",
+          "arn:aws:ec2:*:*:instance/*",
+          "arn:aws:s3:::further-confluent-ssdev-bucket/*"
+        ],
+        "Sid": "DetailedLogsAccess"
+      },
+      {
+        "Action": [
+          "cloudwatch:GetDashboard",
+          "ecs:ListTagsForResource",
+          "ecs:DescribeTaskSets",
+          "cloudwatch:DescribeAlarmsForMetric",
+          "ecs:ListAttributes",
+          "cloudwatch:GetMetricWidgetImage",
+          "ecs:ListTaskDefinitions",
+          "ecs:ListTaskDefinitionFamilies",
+          "cloudwatch:GetMetricStatistics",
+          "s3:CreateJob",
+          "ecs:ListClusters",
+          "cloudwatch:ListMetrics",
+          "ecs:DescribeContainerInstances",
+          "ecs:DescribeServices",
+          "cloudwatch:GetMetricData",
+          "logs:DescribeLogStreams",
+          "logs:DescribeExportTasks",
+          "ecs:ListTasks",
+          "ecs:ListServices",
+          "ecs:ListContainerInstances",
+          "ecs:ListAccountSettings",
+          "logs:TestMetricFilter",
+          "ecs:DescribeTasks",
+          "s3:ListAllMyBuckets",
+          "logs:GetLogRecord",
+          "s3:ListJobs",
+          "logs:GetQueryResults",
+          "cloudwatch:DescribeAlarmHistory",
+          "cloudwatch:DescribeAnomalyDetectors",
+          "logs:DescribeResourcePolicies",
+          "cloudwatch:ListTagsForResource",
+          "ec2:DescribeInstances",
+          "ecs:DescribeTaskDefinition",
+          "ssm:DescribeInstanceProperties",
+          "ecs:DescribeClusters",
+          "ssm:DescribeSessions",
+          "cloudwatch:ListDashboards",
+          "cloudwatch:DescribeAlarms",
+          "logs:GetLogDelivery",
+          "logs:StopQuery",
+          "logs:DescribeDestinations",
+          "logs:DescribeQueries",
+          "logs:ListLogDeliveries",
+          "logs:DescribeLogGroups",
+          "logs:CancelExportTask"
+        ],
+        "Effect": "Allow",
+        "Resource": "*",
+        "Sid": "ECSConsoleAndMetrics"
+      },
+      {
+        "Action": [
+          "s3:GetLifecycleConfiguration",
+          "s3:GetJobTagging",
+          "s3:GetBucketLocation",
+          "s3:DescribeJob",
+          "s3:GetMetricsConfiguration",
+          "s3:GetEncryptionConfiguration",
+          "logs:GetLogEvents",
+          "s3:ListBucket",
+          "s3:GetBucketAcl"
+        ],
+        "Effect": "Allow",
+        "Resource": [
+          "arn:aws:s3:*:112666688463:job/*",
+          "arn:aws:s3:::*",
+          "arn:aws:logs:*:*:log-group:/aws/ecs/containerinsights/*:log-stream:*"
+        ],
+        "Sid": "GetECSInsightsAccess"
+      },
+      {
+        "Action": "ssm:GetConnectionStatus",
+        "Effect": "Allow",
+        "Resource": [
+          "arn:aws:ssm:*:*:session/*@hellofurther.com",
+          "arn:aws:ssm:*:*:document/*",
+          "arn:aws:ec2:*:*:instance/*"
+        ],
+        "Sid": "SSMSessionAccess"
+      }
+    ],
+    "Version": "2012-10-17"
+  },
+  "Roles": [
+    "usr_ssdev_data-analytics-support"
+  ]
+}

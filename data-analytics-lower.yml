@@ -1,0 +1,348 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation template to create okta role and policy
+Parameters:
+  SamlProviderName:
+    Description: SAML Provider name
+    Type: String
+    Default: FurtherOkta
+  HqySamlProviderName:
+    Description: SAML Provider name
+    Type: String
+    Default: HqyOkta
+  DeployEnvironment:
+    Default: dev
+    AllowedValues: [dev, int, stg, prod, ssdev, ssprod, data-dev, data-int, data-stg, data-prod]
+    ConstraintDescription: Must be either Production (prod), Staging (stg), Integration (int), or Development (dev).
+    Description: Environment of the application
+    Type: String
+
+Mappings: 
+  Account: 
+    data-dev: 
+      "SSMKey": 'arn:aws:kms:us-east-2:442635645944:key/8a0f928a-a7df-406e-b7ab-b4aaebce24c5' #This is data-dev Sessionmanager key ID (IAM does not support key aliases yet)
+    data-int: 
+      "SSMKey": 'arn:aws:kms:us-east-2:351742577344:key/952f518e-1f18-44c3-8d6e-e6db81b6e26b' #This is data-int Sessionmanager key ID (IAM does not support key aliases yet)
+    data-stg: 
+      "SSMKey": 'arn:aws:kms:us-east-2:873285173865:key/968c282c-f255-49ed-878f-c669da40eb8e' #This is data-stg Sessionmanager key ID (IAM does not support key aliases yet)
+    data-prod: 
+      "SSMKey": 'arn:aws:kms:us-east-2:308699119867:key/de710e84-f5a1-4d1a-a84e-81bf1888053a' #This is data-prod Sessionmanager key ID (IAM does not support key aliases yet)
+    ssdev: 
+      "SSMKey": 'arn:aws:kms:us-east-2:112666688463:key/7a89aca0-5490-4857-a1a1-03a9ee80daeb' #This is ssdev Sessionmanager key ID (IAM does not support key aliases yet)
+    ssprod: 
+      "SSMKey": 'arn:aws:kms:us-east-2:196630817344:key/c5f9e8df-613b-42e8-80cb-c650a71980ca' #This is ssprod Sessionmanager key ID (IAM does not support key aliases yet)
+    dev: 
+      "SSMKey": 'arn:aws:kms:us-east-2:450440787293:key/2ea5f090-b285-4821-b830-cb1f331b6019' #This is dev Sessionmanager key ID (IAM does not support key aliases yet)
+    int: 
+      "SSMKey": 'arn:aws:kms:us-east-2:549788597194:key/23623148-756a-48d2-b5c0-f01482a5cb8b' #This is int Sessionmanager key ID (IAM does not support key aliases yet)
+    stg: 
+      "SSMKey": 'arn:aws:kms:us-east-2:551126843258:key/a846ae6b-450a-45bc-9663-79c2df57cc86' #This is stg Sessionmanager key ID (IAM does not support key aliases yet)
+    prod: 
+      "SSMKey": 'arn:aws:kms:us-east-2:008318224960:key/86bce800-4c8b-4321-a4af-8ddfa1ba5e9d' #This is prod Sessionmanager key ID (IAM does not support key aliases yet)
+
+Resources:
+  #This is the actual role that following policies get attached to. Okta references this role.
+  dataAnalyticsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName:
+        Fn::Sub: 
+        - 'usr_${DeployEnv}_data-analytics-support'
+        - { DeployEnv: !Ref DeployEnvironment }
+      Path: /
+      MaxSessionDuration: 43200
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Action: sts:AssumeRoleWithSAML
+          Effect: Allow
+          Condition:
+            StringEquals:
+              SAML:aud: https://signin.aws.amazon.com/saml
+          Principal:
+            Federated: 
+             - !Sub arn:aws:iam::${AWS::AccountId}:saml-provider/${SamlProviderName}
+             - !Sub arn:aws:iam::${AWS::AccountId}:saml-provider/${HqySamlProviderName}
+      Tags:
+      - Key: "SSMSessionRunAs" #This only works if SSMRunAs is enabled via console or CLI
+        Value: "data-analytics-support"
+      - Key: Owner
+        Value: "PDL.Further.Data.Analytics.Team@hellofurther.com"
+      - Key: Description
+        Value: "This role defines access for the data-analytics support team on this account"
+      - Key: Application
+        Value: multiple
+      - Key: Environment
+        Value: !Ref DeployEnvironment
+
+  #SSM Access role to allow login as batch user to clean out temporary directories on job failures
+  DataAnalyticsPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    DependsOn:
+      - dataAnalyticsRole
+    Properties:
+      #ManagedPolicyName: #Cannot have this or we conflict with multiple environments on an account
+      Description: This policy defines access for SSM document runs
+      Roles: 
+        - Ref: dataAnalyticsRole #Attach to our role
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: SSMSessionAccess
+            Effect: Allow
+            Action:
+              - 'ssm:ResumeSession'
+              - 'ssm:TerminateSession'
+              - 'ssm:StartSession'
+              - 'ssm:GetConnectionStatus'
+            Resource:
+              - 'arn:aws:ssm:*:*:session/*@hellofurther.com'
+              - 'arn:aws:ssm:*:*:document/*'
+              - 'arn:aws:ec2:*:*:instance/*'
+          - Sid: SSMDescribeSessions
+            Effect: Allow
+            Action: 
+              - 'ssm:DescribeSessions'
+              - 'ssm:DescribeInstanceProperties'
+              - 'ec2:describeInstances'
+            Resource: '*'
+          - Sid: KMSUseKeyForSSM
+            Effect: Allow
+            Action: 
+              - 'kms:GenerateDataKey'
+            Resource: 
+              - !FindInMap
+                - Account
+                - !Ref DeployEnvironment
+                - SSMKey
+          - Sid: LogsReadAccess
+            Effect: Allow
+            Action:
+              - 'logs:Describe*'
+              - 'logs:Get*'
+              - 'logs:List*'
+              - 'logs:StartQuery'
+              - 'logs:StopQuery'
+              - 'logs:TestMetricFilter'
+              - 'logs:FilterLogEvents'
+            Resource:
+              - '*'
+          - Sid: LogsDenySpecificActions
+            Effect: Deny
+            Action:
+              - 'logs:Tag*'
+              - 'logs:Untag*'
+              - 'logs:Update*'
+              - 'logs:Put*'
+              - 'logs:Delete*'
+              - 'logs:CreateLog*'
+              - 'logs:DisassociateKmsKey'
+              - 'logs:AssociateKmsKey'
+            Resource:
+              - '*'
+          - Sid: DenyLogsFromSpecificResources
+            Effect: Deny
+            Action:
+              - 'logs:*'
+            Resource:
+              - !Sub 'arn:aws:logs:*:${AWS::AccountId}:log-group:/aws/ssm/*:log-stream:*'
+              - !Sub 'arn:aws:logs:*:${AWS::AccountId}:log-group:/aws/lambda/*:log-stream:*'
+              - !Sub 'arn:aws:logs:*:${AWS::AccountId}:log-group:/aws/ec2/*:log-stream:*'
+          - Sid: KinesisReadAccess
+            Effect: Allow
+            Action:
+              - '*'
+            Resource:
+              - '*'
+          - Sid: KinesisDenySpecificActions
+            Effect: Deny
+            Action:
+              - 'kinesis:CreateStream'
+              - 'kinesis:DecreaseStreamRetentionPeriod'
+              - 'kinesis:Delete*'
+              - 'Kinesis:DeregisterStreamConsumer'
+              - 'kinesis:DisableEnhancedMonitoring'
+              - 'kinesis:EnableEnhancedMonitoring'
+              - 'kinesis:IncreaseStreamRetentionPeriod'
+              - 'kinesis:MergeShards'
+              - 'kinesis:Put*'
+              - 'kinesis:Get*'
+              - 'kinesis:Subscribe*'
+              - 'kinesis:RegisterStreamConsumer'
+              - 'kinesis:SplitShard'
+              - 'kinesis:StartStreamEncryption'
+              - 'kinesis:StopStreamEncryption'
+              - 'kinesis:UpdateShardCount'
+              - 'kinesis:AddTagsToStream'
+              - 'kinesis:RemoveTagsFromStream'
+            Resource:
+              - '*'
+          - Sid: AutoscalingConsoleView
+            Effect: Allow
+            Action:
+              - 'autoscaling:Describe*'
+            Resource:
+              - '*'
+          - Sid: RDSReadAccess
+            Effect: Allow
+            Action:
+              - 'rds:*'
+            Resource:
+              - '*'
+          - Sid: RDSDenySpecificActions
+            Effect: Deny
+            Action:
+              - 'rds:StartDBCluster'
+              - 'rds:DeleteGlobalCluster'
+              - 'rds:RemoveRoleFromDBCluster'
+              - 'rds:RestoreDBInstanceFromS3'
+              - 'rds:ResetDBParameterGroup'
+              - 'rds:CreateGlobalCluster'
+              - 'rds:DeregisterDBProxyTargets'
+              - 'rds:CreateOptionGroup'
+              - 'rds:CreateDBSubnetGroup'
+              - 'rds:ModifyDBParameterGroup'
+              - 'rds:AddSourceIdentifierToSubscription'
+              - 'rds:CopyDBParameterGroup'
+              - 'rds:AddRoleToDBCluster'
+              - 'rds:ModifyDBInstance'
+              - 'rds:ModifyDBClusterParameterGroup'
+              - 'rds:RegisterDBProxyTargets'
+              - 'rds:ModifyDBClusterSnapshotAttribute'
+              - 'rds:DeleteDBInstance'
+              - 'rds:CopyDBClusterParameterGroup'
+              - 'rds:CreateDBClusterEndpoint'
+              - 'rds:StopDBCluster'
+              - 'rds:CreateDBParameterGroup'
+              - 'rds:DeleteDBSnapshot'
+              - 'rds:DeleteDBProxy'
+              - 'rds:RemoveFromGlobalCluster'
+              - 'rds:PromoteReadReplica'
+              - 'rds:StartDBInstance'
+              - 'rds:StopActivityStream'
+              - 'rds:RestoreDBClusterFromS3'
+              - 'rds:DeleteDBSubnetGroup'
+              - 'rds:CreateDBSnapshot'
+              - 'rds:RestoreDBInstanceFromDBSnapshot'
+              - 'rds:DeleteDBSecurityGroup'
+              - 'rds:ModifyDBClusterEndpoint'
+              - 'rds:ModifyDBCluster'
+              - 'rds:CreateDBClusterSnapshot'
+              - 'rds:DeleteDBParameterGroup'
+              - 'rds:CreateDBClusterParameterGroup'
+              - 'rds:ModifyDBSnapshotAttribute'
+              - 'rds:RemoveTagsFromResource'
+              - 'rds:PromoteReadReplicaDBCluster'
+              - 'rds:AuthorizeDBSecurityGroupIngress'
+              - 'rds:CreateEventSubscription'
+              - 'rds:ModifyOptionGroup'
+              - 'rds:RestoreDBClusterFromSnapshot'
+              - 'rds:StartActivityStream'
+              - 'rds:DeleteOptionGroup'
+              - 'rds:FailoverDBCluster'
+              - 'rds:DeleteEventSubscription'
+              - 'rds:RemoveSourceIdentifierFromSubscription'
+              - 'rds:AddRoleToDBInstance'
+              - 'rds:ModifyDBProxy'
+              - 'rds:CreateDBInstance'
+              - 'rds:DeleteDBClusterEndpoint'
+              - 'rds:RevokeDBSecurityGroupIngress'
+              - 'rds:ModifyCurrentDBClusterCapacity'
+              - 'rds:DeleteDBCluster'
+              - 'rds:ResetDBClusterParameterGroup'
+              - 'rds:RestoreDBClusterToPointInTime'
+              - 'rds:AddTagsToResource'
+              - 'rds:CopyDBSnapshot'
+              - 'rds:CopyDBClusterSnapshot'
+              - 'rds:ModifyEventSubscription'
+              - 'rds:StopDBInstance'
+              - 'rds:CopyOptionGroup'
+              - 'rds:ModifyDBProxyTargetGroup'
+              - 'rds:ModifyDBSnapshot'
+              - 'rds:DeleteDBClusterSnapshot'
+              - 'rds:CreateDBCluster'
+              - 'rds:CreateDBSecurityGroup'
+              - 'rds:RebootDBInstance'
+              - 'rds:ModifyGlobalCluster'
+              - 'rds:DeleteDBClusterParameterGroup'
+              - 'rds:ApplyPendingMaintenanceAction'
+              - 'rds:BacktrackDBCluster'
+              - 'rds:CreateDBInstanceReadReplica'
+              - 'rds:RemoveRoleFromDBInstance'
+              - 'rds:ModifyDBSubnetGroup'
+              - 'rds:RestoreDBInstanceToPointInTime'
+              - 'rds:CancelExportTask'
+              - 'rds:CrossRegionCommunication'
+              - 'rds:StartExportTask'
+              - 'rds:CreateDBProxy'
+              - 'rds:DeleteDBInstanceAutomatedBackup'
+            Resource:
+              - '*'
+          - Sid: DMSReadAccess
+            Effect: Allow
+            Action:
+              - 'dms:*'
+            Resource:
+              - '*'
+          - Sid: DMSDenySpecificActions
+            Effect: Deny
+            Action:
+              - 'dms:CreateReplicationInstance'
+              - 'dms:CreateReplicationSubnetGroup'
+              - 'dms:DeleteReplicationInstance'
+              - 'dms:DeleteReplicationSubnetGroup'
+              - 'dms:ModifyReplicationInstance'
+              - 'dms:ModifyReplicationSubnetGroup'
+              - 'dms:AddTagsToResource'
+              - 'dms:RemoveTagsFromResource'
+            Resource:
+              - '*'
+          - Sid: DynamoDBConsoleView
+            Effect: Allow
+            Action:
+              - 'dynamodb:List*'
+              - 'dynamodb:Describe*'
+            Resource:
+              - '*'
+          - Sid: DynamoRAccessSpecificTables
+            Effect: Allow
+            Action:
+              - 'dynamodb:*'
+            Resource:
+              - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/*tKinesis*' #Talend puts tables with tKinesis, so allow access to that on lower environment
+          - Sid: DynamoDenySpecificActions
+            Effect: Deny
+            Action:
+              - 'dynamodb:Get*'
+              - 'dynamodb:Put*'
+              - 'dynamodb:Update*'
+              - 'dynamodb:Create*'
+              - 'dynamodb:Purchase*'
+              - 'dynamodb:Restore*'
+              - 'dynamodb:Batch*'
+              - 'dynamodb:Query'
+              - 'dynamodb:Scan'
+              - 'dynamodb:TagResource'
+              - 'dynamodb:UntagResource'
+            Resource:
+              - '*'
+          - Sid: CloudWatchMetricsReadAccess
+            Effect: Allow
+            Action:
+              - 'cloudwatch:Describe*'
+              - 'cloudwatch:List*'
+              - 'cloudwatch:Get*'
+            Resource: 
+              - '*'
+              - !Sub 'arn:aws:cloudwatch::${AWS::AccountId}:dashboard/*'
+              - !Sub 'arn:aws:cloudwatch:*:${AWS::AccountId}:insight-rule/*'
+              - !Sub 'arn:aws:cloudwatch:*:${AWS::AccountId}:alarm:*'
+          - Sid: CloudWatchMetricsDenySpecificActions
+            Effect: Deny
+            Action:
+              - 'cloudwatch:Delete*'
+              - 'cloudwatch:Enable*'
+              - 'cloudwatch:Put*'
+              - 'cloudwatch:Set*'
+              - 'cloudwatch:Tag*'
+              - 'cloudwatch:Untag*'
+            Resource: '*'
